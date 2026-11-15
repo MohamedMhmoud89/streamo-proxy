@@ -19,8 +19,16 @@ export default async function handler(req) {
   }
 
   try {
+    const targetParsed = new URL(targetUrl);
     const forwardHeaders = new Headers();
-    forwardHeaders.set("User-Agent", "VLC/3.0.18 LibVLC/3.0.18");
+    forwardHeaders.set(
+      "User-Agent",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+    );
+    forwardHeaders.set("Accept", "*/*");
+    forwardHeaders.set("Accept-Language", "en-US,en;q=0.9");
+    forwardHeaders.set("Referer", `${targetParsed.origin}/`);
+
     if (req.headers.has("Range")) {
       forwardHeaders.set("Range", req.headers.get("Range"));
     }
@@ -39,18 +47,25 @@ export default async function handler(req) {
 
     if (contentType.includes("mpegurl") || finalUrl.includes(".m3u8")) {
       const text = await response.text();
-      const baseUrl = new URL(finalUrl);
-      const proxyPrefix = `${reqUrl.origin}/api/proxy?url=`;
+      if (text.trimStart().startsWith("#EXTM3U")) {
+        const baseUrl = new URL(finalUrl);
+        const proxyPrefix = `${reqUrl.origin}/api/proxy?url=`;
 
-      const rewritten = text.split("\n").map((line) => {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith("#")) return line;
-        const absoluteUrl = new URL(trimmed, baseUrl).href;
-        return `${proxyPrefix}${encodeURIComponent(absoluteUrl)}`;
-      }).join("\n");
+        const rewritten = text.split("\n").map((line) => {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith("#")) return line;
+          const absoluteUrl = new URL(trimmed, baseUrl).href;
+          return `${proxyPrefix}${encodeURIComponent(absoluteUrl)}`;
+        }).join("\n");
 
-      newHeaders.delete("Content-Length");
-      return new Response(rewritten, {
+        newHeaders.delete("Content-Length");
+        newHeaders.set("Content-Type", "application/vnd.apple.mpegurl");
+        return new Response(rewritten, {
+          status: response.status,
+          headers: newHeaders,
+        });
+      }
+      return new Response(text, {
         status: response.status,
         headers: newHeaders,
       });
